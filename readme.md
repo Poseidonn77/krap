@@ -2,6 +2,6 @@
 ./`filename`.zsh
 
 
-Apple PKI CRL import Scrips
+Apple PKI CRL import Scripts
 
 My aim is to kick the bad actors where it hurts

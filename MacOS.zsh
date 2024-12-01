@@ -7,6 +7,16 @@ CRL_URLS=(
     "http://crl.apple.com/softwareupdateca.crl"
     "http://crl.apple.com/timestamp.crl"
     "http://developer.apple.com/certificationauthority/wwdrca.crl"
+    "http://crl.apple.com/apsrsa12g1.crl"
+    "http://crl.apple.com/apsecc12g1.crl"
+    "http://crl.apple.com/appleistca2g1.crl"
+    "http://crl.apple.com/appleistca8g1.crl"
+    "http://crl.apple.com/apevsrsa1g1.crl"
+    "http://crl.apple.com/apevsrsa2g1.crl"
+    "http://crl.apple.com/apevsrsaca3g1.crl"
+    "http://crl.apple.com/apevsecc1g1.crl"
+    "http://crl.apple.com/aptrsa1g1.crl"
+    "http://crl.apple.com/aptecc1g1.crl"
 )
 
 # Temporary directory to store downloaded CRLs

@@ -51,7 +51,6 @@ CRL_URLS=(
 "http://crl.harica.gr/HARICA-CodeSigning-Root-2021-RSA.crl"
 "http://crl.sectigo.com/SectigoPublicCodeSigningRootE46.crl"
 "http://crl.startssl.com/sfsca.crl"
-"http://crl.wt.trustasia.com/TrustAsiaGlobalRootCAG3.crl"
 )
 
 # Temporary directory to store downloaded CRLs

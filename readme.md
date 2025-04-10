@@ -1,3 +1,6 @@
+
+
+(parsed.extensions.extended_key_usage.code_signing=true AND parsed.extensions.crl_distribution_points="*") and labels=`ever-trusted`
 # CRL Downloader and Importer Script
 
 This script automates the process of downloading and importing Certificate Revocation Lists (CRLs) from specified URLs into the system keychain on a macOS system. Keeping CRLs up-to-date is essential for maintaining the security and integrity of your system's SSL/TLS infrastructure.

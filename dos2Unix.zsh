@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Check if the directory argument is provided
 if [ -z "$1" ]; then
@@ -12,6 +13,12 @@ DIRECTORY="$1"
 # Verify that the provided argument is a directory
 if [ ! -d "$DIRECTORY" ]; then
   echo "Error: The provided argument is not a directory."
+  exit 1
+fi
+
+# Ensure dos2unix is available
+if ! command -v dos2unix >/dev/null 2>&1; then
+  echo "Error: 'dos2unix' is not installed. Install it (e.g., 'brew install dos2unix') and retry." >&2
   exit 1
 fi
 

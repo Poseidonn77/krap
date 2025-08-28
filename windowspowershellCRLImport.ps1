@@ -1,5 +1,14 @@
-# This PowerShell script downloads a list of CRLs and imports them into the Windows certificate store.
-# Be sure to run this as Administrator.
+# Downloads CRLs and imports them into the Windows certificate stores.
+# Run this in an elevated PowerShell (Run as Administrator).
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+# Prefer modern TLS for HTTPS endpoints (ignored for HTTP)
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch { }
 
 # Array of CRL URLs
 $crlUrls = @(
@@ -51,42 +60,44 @@ $crlUrls = @(
     "http://crl.harica.gr/HARICA-CodeSigning-Root-2021-ECC.crl",
     "http://crl.harica.gr/HARICA-CodeSigning-Root-2021-RSA.crl",
     "http://crl.sectigo.com/SectigoPublicCodeSigningRootE46.crl",
-    "http://crl.startssl.com/sfsca.crl",
+    "http://crl.startssl.com/sfsca.crl"
 )
 
+# Target certificate store for CRLs: use CA (Intermediate CAs) by default.
+$targetStore = 'CA'
+
 # Temporary directory to store downloaded CRLs
-$tempDir = Join-Path $env:TEMP "apple_crls"
+$tempDir = Join-Path $env:TEMP "crl_import"
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
-# Create the temporary directory if it doesn't exist
-if (!(Test-Path -Path $tempDir)) {
-    New-Item -ItemType Directory -Path $tempDir | Out-Null
-}
+# For Windows PowerShell, use basic parsing to avoid IE engine
+$useBasicParsing = $PSVersionTable.PSEdition -eq 'Desktop'
 
-foreach ($url in $crlUrls) {
-    # Extract the filename from the URL
+foreach ($url in $crlUrls | Where-Object { $_ -and $_.Trim() -ne '' } | Select-Object -Unique) {
     $filename = Split-Path -Path $url -Leaf
+    if (-not $filename) { $filename = [Guid]::NewGuid().ToString() + '.crl' }
     $crlFile = Join-Path -Path $tempDir -ChildPath $filename
 
     Write-Host "Downloading CRL from $url..."
     try {
-        Invoke-WebRequest -Uri $url -OutFile $crlFile -ErrorAction Stop
-    }
-    catch {
-        Write-Host "Failed to download the CRL from $url."
+        Invoke-WebRequest -Uri $url -OutFile $crlFile -UseBasicParsing:$useBasicParsing -ErrorAction Stop
+    } catch {
+        Write-Warning "Failed to download CRL: $url (`$($_.Exception.Message)`)"
         continue
     }
 
-    Write-Host "Importing the CRL from $filename into the system certificate store..."
-    # Import the CRL using certutil. (Store "ROOT" is chosen here.)
-    & certutil -addstore -f "ROOT" $crlFile
+    if (-not (Test-Path -LiteralPath $crlFile) -or (Get-Item -LiteralPath $crlFile).Length -eq 0) {
+        Write-Warning "Downloaded file is missing or empty: $filename"
+        continue
+    }
 
+    Write-Host "Importing CRL into '$targetStore' store: $filename"
+    & certutil -addstore -f $targetStore $crlFile | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to import the CRL from $filename."
+        Write-Warning "certutil failed for $filename with exit code $LASTEXITCODE"
         continue
     }
 }
 
-# Clean up the temporary directory
-Remove-Item -Path $tempDir -Recurse -Force
-
-Write-Host "All CRLs have been processed."
+Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host "All CRLs processed."

@@ -1,21 +1,22 @@
 #!/bin/zsh
+set -euo pipefail
 
 CRL_URLS=(
-    "http://www.apple.com/appleca/root.crl"
-    "http://www.apple.com/certificateauthority/root.crl"
-    "http://crl.apple.com/softwareupdateca.crl"
-    "http://crl.apple.com/timestamp.crl"
-    "http://developer.apple.com/certificationauthority/wwdrca.crl"
-    "http://crl.apple.com/apsrsa12g1.crl"
-    "http://crl.apple.com/apsecc12g1.crl"
-    "http://crl.apple.com/appleistca2g1.crl"
-    "http://crl.apple.com/appleistca8g1.crl"
-    "http://crl.apple.com/apevsrsa1g1.crl"
-    "http://crl.apple.com/apevsrsa2g1.crl"
-    "http://crl.apple.com/apevsrsaca3g1.crl"
-    "http://crl.apple.com/apevsecc1g1.crl"
-    "http://crl.apple.com/aptrsa1g1.crl"
-    "http://crl.apple.com/aptecc1g1.crl"
+    "https://www.apple.com/appleca/root.crl"
+    "https://www.apple.com/certificateauthority/root.crl"
+    "https://crl.apple.com/softwareupdateca.crl"
+    "https://crl.apple.com/timestamp.crl"
+    "https://developer.apple.com/certificationauthority/wwdrca.crl"
+    "https://crl.apple.com/apsrsa12g1.crl"
+    "https://crl.apple.com/apsecc12g1.crl"
+    "https://crl.apple.com/appleistca2g1.crl"
+    "https://crl.apple.com/appleistca8g1.crl"
+    "https://crl.apple.com/apevsrsa1g1.crl"
+    "https://crl.apple.com/apevsrsa2g1.crl"
+    "https://crl.apple.com/apevsrsaca3g1.crl"
+    "https://crl.apple.com/apevsecc1g1.crl"
+    "https://crl.apple.com/aptrsa1g1.crl"
+    "https://crl.apple.com/aptecc1g1.crl"
 "http://crl.usertrust.com/USERTrustRSACertificationAuthority.crl"
 "http://crl.usertrust.com/USERTrustECCCertificationAuthority.crl"
 "http://crl3.digicert.com/DigiCertTrustedRootG4.crl"
@@ -146,7 +147,7 @@ do_crl() {
 
     {
 #        echo "[PID $$] Downloading $url..."
-        if ! curl -s -o "$crl_file" "$url"; then
+        if ! curl -fsSL -o "$crl_file" "$url"; then
             echo "[PID $$] Failed to download $url"
             return 1
         fi
@@ -165,6 +166,10 @@ jobs_active() {
     # On zsh: count just background jobs attached to this shell
     jobs -p | wc -l | awk '{print $1}' 
 }
+
+# Pre-authenticate sudo once up front
+echo "Requesting sudo access to import into System keychain..."
+sudo -v
 
 for CRL_URL in "${CRL_URLS[@]}"; do
     # Limit active jobs

@@ -1,4 +1,5 @@
 #!/bin/zsh
+set -euo pipefail
 
 # Array of CRL URLs
 CRL_URLS=(
@@ -22,8 +23,18 @@ CRL_URLS=(
 # Temporary directory to store downloaded CRLs
 TEMP_DIR="/tmp/apple_crls"
 
+# Ensure cleanup on exit
+cleanup() {
+  rm -rf "$TEMP_DIR" || true
+}
+trap cleanup EXIT
+
 # Create the temporary directory
 mkdir -p "$TEMP_DIR"
+
+# Pre-authenticate sudo once up front
+echo "Requesting sudo access to import into System keychain..."
+sudo -v
 
 # Loop over the CRL URLs
 for CRL_URL in "${CRL_URLS[@]}"; do
@@ -33,17 +44,20 @@ for CRL_URL in "${CRL_URLS[@]}"; do
 
     # Download the CRL
     echo "Downloading CRL from $CRL_URL..."
-    curl -s -o "$CRL_FILE" "$CRL_URL"
-
-    # Check if the download was successful
-    if [[ $? -ne 0 ]]; then
+    if ! curl -fsSL -o "$CRL_FILE" "$CRL_URL"; then
         echo "Failed to download the CRL from $CRL_URL."
+        continue
+    fi
+
+    # Ensure the file is non-empty
+    if [[ ! -s "$CRL_FILE" ]]; then
+        echo "Downloaded file is empty for $CRL_URL. Skipping."
         continue
     fi
 
     # Import the CRL into the system keychain
     echo "Importing the CRL from $FILENAME into the system keychain..."
-    sudo security import "$CRL_FILE" -f raw  -k "/Library/Keychains/System.keychain"
+    sudo security import "$CRL_FILE" -f raw -k "/Library/Keychains/System.keychain"
 
     # Check if the import was successful
     if [[ $? -ne 0 ]]; then
@@ -51,8 +65,5 @@ for CRL_URL in "${CRL_URLS[@]}"; do
         continue
     fi
 done
-
-# Clean up the temporary directory
-rm -rf "$TEMP_DIR"
 
 echo "All CRLs have been processed."

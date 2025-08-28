@@ -1,154 +1,71 @@
+# CRL Tools (macOS + Windows)
 
+This repository contains small utilities for working with Certificate Revocation Lists (CRLs):
 
-(parsed.extensions.extended_key_usage.code_signing=true AND parsed.extensions.crl_distribution_points="*") and labels=`ever-trusted`
-# CRL Downloader and Importer Script
-
-This script automates the process of downloading and importing Certificate Revocation Lists (CRLs) from specified URLs into the system keychain on a macOS system. Keeping CRLs up-to-date is essential for maintaining the security and integrity of your system's SSL/TLS infrastructure.
+- `apple_download_and_import_crls.zsh`: Sequential CRL downloader/importer for macOS.
+- `codesign_CRL.zsh`: Parallel CRL downloader/importer for macOS with a larger URL set.
+- `windowspowershellCRLImport.ps1`: CRL downloader/importer for Windows (uses `certutil`).
+- `codesignList.zsh`: Helper to query CRL distribution points from Censys (requires credentials and `jq`).
+- `ever-trusted-root-crl.txt`, `rootcrl.txt`: Example CRL lists.
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [How the Script Works](#how-the-script-works)
-  - [Configuration](#configuration)
-  - [Temporary Directory Setup](#temporary-directory-setup)
-  - [Downloading and Importing CRLs](#downloading-and-importing-crls)
-  - [Cleanup](#cleanup)
-  - [Final Messaging](#final-messaging)
-- [Usage](#usage)
+- [macOS Scripts](#macos-scripts)
+  - [How They Work](#how-they-work)
+  - [Usage](#usage)
+- [Windows Script](#windows-script)
+- [Optional: Collect CRL URLs via Censys](#optional-collect-crl-urls-via-censys)
 - [Caution](#caution)
 
 ## Prerequisites
 
-- **Z shell (zsh)**: The script is written in zsh, which is the default shell in macOS.
-- **`curl`**: A command-line tool for transferring data with URLs, pre-installed on macOS.
-- **Administrative Privileges**: The script uses `sudo` to import CRLs into the system keychain, requiring administrative access.
+- **macOS**: `zsh` and `curl` (preinstalled); administrative privileges for keychain imports.
+- **Windows**: PowerShell, `certutil` (preinstalled), run as Administrator.
+- Optional: `jq` (for `codesignList.zsh`) and valid Censys API credentials.
 
-## How the Script Works
+## macOS Scripts
 
-### Configuration
+### How They Work
 
-The script starts by defining an array `CRL_URLS` containing the URLs of the CRLs to be downloaded and imported. You can modify this list to include any other CRL URLs your system requires.
+Both macOS scripts define an array `CRL_URLS` containing CRL endpoints to fetch. Downloads are written to a temporary directory and then imported into the System keychain. The `codesign_CRL.zsh` variant runs multiple downloads/imports in parallel to speed things up on large lists.
 
-```zsh
-# Array of CRL URLs
-CRL_URLS=(
-    "https://www.apple.com/appleca/root.crl"
-    "https://www.apple.com/certificateauthority/root.crl"
-    "https://crl.apple.com/softwareupdateca.crl"
-    "https://crl.apple.com/timestamp.crl"
-    "https://developer.apple.com/certificationauthority/wwdrca.crl"
-    "https://crl.apple.com/apsrsa12g1.crl"
-    "https://crl.apple.com/apsecc12g1.crl"
-    "https://crl.apple.com/appleistca2g1.crl"
-    "https://crl.apple.com/appleistca8g1.crl"
-    "https://crl.apple.com/apevsrsa1g1.crl"
-    "https://crl.apple.com/apevsrsa2g1.crl"
-    "https://crl.apple.com/apevsrsaca3g1.crl"
-    "https://crl.apple.com/apevsecc1g1.crl"
-    "https://crl.apple.com/aptrsa1g1.crl"
-    "https://crl.apple.com/aptecc1g1.crl"
-)
-```
+Note: CRL distribution points are often served over HTTP by design. Where HTTPS is available (e.g., many Apple endpoints), these scripts prefer HTTPS.
 
-### Temporary Directory Setup
+High level steps per CRL URL:
+- Extract filename; download to temp dir with `curl`.
+- Import into the System keychain via `security`.
+- Clean up temporary files on exit.
 
-A temporary directory is created to store the downloaded CRL files. The `mkdir -p` command ensures that the directory is created if it doesn't already exist.
+### Usage
 
-```zsh
-# Temporary directory to store downloaded CRLs
-TEMP_DIR="/tmp/apple_crls"
+For the simple sequential macOS variant:
 
-# Create the temporary directory
-mkdir -p "$TEMP_DIR"
-```
+- Make executable: `chmod +x apple_download_and_import_crls.zsh`
+- Run: `./apple_download_and_import_crls.zsh`
 
-### Downloading and Importing CRLs
+For the parallel macOS variant:
 
-The script loops over each URL in the `CRL_URLS` array, performing the following steps:
+- Make executable: `chmod +x codesign_CRL.zsh`
+- Run: `./codesign_CRL.zsh`
 
-1. **Extract the Filename**: The filename is extracted from the URL using the `basename` command.
+## Windows Script
 
-    ```zsh
-    # Extract the filename from the URL
-    FILENAME="$(basename "$CRL_URL")"
-    CRL_FILE="$TEMP_DIR/$FILENAME"
-    ```
+- Run PowerShell as Administrator.
+- Execute: `.\windowspowershellCRLImport.ps1`
+- The script downloads each CRL and adds it to the Windows certificate stores using `certutil` (defaults to the `CA` store).
 
-2. **Download the CRL**: The CRL is downloaded using `curl` and saved to the temporary directory.
+## Optional: Collect CRL URLs via Censys
 
-    ```zsh
-    # Download the CRL
-    echo "Downloading CRL from $CRL_URL..."
-    curl -s -o "$CRL_FILE" "$CRL_URL"
-    ```
+`codesignList.zsh` calls the Censys v2 aggregate API to enumerate common CRL distribution points from publicly trusted code signing certificates.
 
-3. **Check Download Success**: The script checks if the download was successful by examining the exit status of the `curl` command.
+- Requires: `jq`, Censys API ID/Secret. Set `API_ID` and `API_SECRET` in the script before running.
+- Output: `crl_urls_with_counts.txt` (URL + count) and `crl_urls.txt` (URL only).
 
-    ```zsh
-    # Check if the download was successful
-    if [[ $? -ne 0 ]]; then
-        echo "Failed to download the CRL from $CRL_URL."
-        continue
-    fi
-    ```
-
-4. **Import the CRL into the System Keychain**: The downloaded CRL is imported using the `security` command. Since modifying the system keychain requires administrative privileges, `sudo` is used.
-
-    ```zsh
-    # Import the CRL into the system keychain
-    echo "Importing the CRL from $FILENAME into the system keychain..."
-    sudo security import "$CRL_FILE" -f raw  -k "/Library/Keychains/System.keychain"
-    ```
-
-5. **Check Import Success**: The script checks if the import operation was successful.
-
-    ```zsh
-    # Check if the import was successful
-    if [[ $? -ne 0 ]]; then
-        echo "Failed to import the CRL from $FILENAME."
-        continue
-    fi
-    ```
-
-### Cleanup
-
-After all CRLs have been processed, the temporary directory and its contents are deleted to clean up the system.
-
-```zsh
-# Clean up the temporary directory
-rm -rf "$TEMP_DIR"
-```
-
-### Final Messaging
-
-The script ends by confirming that all CRLs have been processed.
-
-```zsh
-echo "All CRLs have been processed."
-```
-
-## Usage
-
-Follow these steps to use the script:
-
-1. **Save the Script**: Copy the script into a file named `download_and_import_crls.zsh`.
-
-2. **Make the Script Executable**: Open Terminal and run:
-
-    ```bash
-    chmod +x download_and_import_crls.zsh
-    ```
-
-3. **Run the Script**: Execute the script with:
-
-    ```bash
-    ./download_and_import_crls.zsh
-    ```
-
-4. **Provide Administrative Password**: When prompted, enter your password. This is necessary because the script uses `sudo` to import CRLs into the system keychain.
+Note: Network calls are not used by the import scripts themselves; only `codesignList.zsh` uses the network.
 
 ## Caution
 
-- **Security Risks**: Ensure that the URLs in the `CRL_URLS` array are from trusted sources. Importing CRLs from unverified sources can compromise your system's security.
-- **System Modifications**: The script modifies your system keychain. Understand the implications or consult with a system administrator before proceeding.
-- **Administrative Privileges Required**: The script requires `sudo` access to function correctly. Use caution when executing scripts with elevated privileges.
+- **Trusted sources**: Only import CRLs from trusted CAs you rely on.
+- **Keychain/Store changes**: Importing affects system-wide certificate processing. Validate in a test environment first.
+- **Admin privileges**: macOS scripts use `sudo`; Windows requires an elevated PowerShell.

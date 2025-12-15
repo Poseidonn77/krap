@@ -1,69 +1,80 @@
 #!/bin/zsh
 set -euo pipefail
 
-# Array of CRL URLs
+# NOTE:
+# macOS Keychain generally does NOT support importing CRLs via `security import`.
+# This script will still download all CRLs and *attempt* an import, but will
+# continue on failures (so one bad/unsupported import won't kill the whole run).
+
 CRL_URLS=(
-    "https://www.apple.com/appleca/root.crl"
-    "https://www.apple.com/certificateauthority/root.crl"
-    "https://crl.apple.com/softwareupdateca.crl"
-    "https://crl.apple.com/timestamp.crl"
-    "https://developer.apple.com/certificationauthority/wwdrca.crl"
-    "https://crl.apple.com/apsrsa12g1.crl"
-    "https://crl.apple.com/apsecc12g1.crl"
-    "https://crl.apple.com/appleistca2g1.crl"
-    "https://crl.apple.com/appleistca8g1.crl"
-    "https://crl.apple.com/apevsrsa1g1.crl"
-    "https://crl.apple.com/apevsrsa2g1.crl"
-    "https://crl.apple.com/apevsrsaca3g1.crl"
-    "https://crl.apple.com/apevsecc1g1.crl"
-    "https://crl.apple.com/aptrsa1g1.crl"
-    "https://crl.apple.com/aptecc1g1.crl"
+  "http://www.apple.com/appleca/root.crl"
+  "http://www.apple.com/certificateauthority/root.crl"
+  "http://crl.apple.com/softwareupdateca.crl"
+  "http://crl.apple.com/timestamp.crl"
+  "http://developer.apple.com/certificationauthority/wwdrca.crl"
+  "http://crl.apple.com/apsrsa12g1.crl"
+  "http://crl.apple.com/apsecc12g1.crl"
+  "http://crl.apple.com/appleistca2g1.crl"
+  "http://crl.apple.com/appleistca8g1.crl"
+  "http://crl.apple.com/apevsrsa1g1.crl"
+  "http://crl.apple.com/apevsrsa2g1.crl"
+  "http://crl.apple.com/apevsrsaca3g1.crl"
+  "http://crl.apple.com/apevsecc1g1.crl"
+  "http://crl.apple.com/aptrsa1g1.crl"
+  "http://crl.apple.com/aptecc1g1.crl"
 )
 
-# Temporary directory to store downloaded CRLs
-TEMP_DIR="/tmp/apple_crls"
+# Use a unique temp dir per run
+TEMP_DIR="$(mktemp -d /tmp/apple_crls.XXXXXX)"
 
-# Ensure cleanup on exit
 cleanup() {
   rm -rf "$TEMP_DIR" || true
 }
 trap cleanup EXIT
 
-# Create the temporary directory
-mkdir -p "$TEMP_DIR"
+echo "Downloading CRLs into: $TEMP_DIR"
 
-# Pre-authenticate sudo once up front
-echo "Requesting sudo access to import into System keychain..."
+# Pre-authenticate sudo once up front (optional if you keep the import step)
+echo "Requesting sudo access..."
 sudo -v
 
-# Loop over the CRL URLs
+# Optional: keep sudo alive while the script runs
+# (prevents failures if the loop takes longer than sudo timeout)
+while true; do
+  sudo -n true 2>/dev/null || exit 0
+  sleep 60
+done &
+SUDO_KEEPALIVE_PID=$!
+trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true; cleanup' EXIT
+
 for CRL_URL in "${CRL_URLS[@]}"; do
-    # Extract the filename from the URL
-    FILENAME="$(basename "$CRL_URL")"
-    CRL_FILE="$TEMP_DIR/$FILENAME"
+  FILENAME="$(basename "$CRL_URL")"
+  CRL_FILE="$TEMP_DIR/$FILENAME"
 
-    # Download the CRL
-    echo "Downloading CRL from $CRL_URL..."
-    if ! curl -fsSL -o "$CRL_FILE" "$CRL_URL"; then
-        echo "Failed to download the CRL from $CRL_URL."
-        continue
-    fi
+  echo "Downloading: $CRL_URL"
+  if ! curl -fsSL \
+      --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 60 \
+      -o "$CRL_FILE" "$CRL_URL"
+  then
+    echo "  ERROR: download failed, skipping."
+    continue
+  fi
 
-    # Ensure the file is non-empty
-    if [[ ! -s "$CRL_FILE" ]]; then
-        echo "Downloaded file is empty for $CRL_URL. Skipping."
-        continue
-    fi
+  if [[ ! -s "$CRL_FILE" ]]; then
+    echo "  ERROR: downloaded file is empty, skipping."
+    continue
+  fi
 
-    # Import the CRL into the system keychain
-    echo "Importing the CRL from $FILENAME into the system keychain..."
-    sudo security import "$CRL_FILE" -f raw -k "/Library/Keychains/System.keychain"
+  echo "Attempting import into System.keychain: $FILENAME"
+  # IMPORTANT: This commonly fails because Keychain doesn't import CRLs.
+  # Use `if ! ...; then ...; fi` so `set -e` doesn't abort the whole script.
+  if ! sudo security import "$CRL_FILE" -f raw -k "/Library/Keychains/System.keychain" >/dev/null 2>&1; then
+    echo "  WARN: import failed/unsupported for CRL ($FILENAME). Leaving it downloaded."
+    continue
+  fi
 
-    # Check if the import was successful
-    if [[ $? -ne 0 ]]; then
-        echo "Failed to import the CRL from $FILENAME."
-        continue
-    fi
+  echo "  OK: imported (if supported)."
 done
 
 echo "All CRLs have been processed."
+echo "Downloaded files remain available until exit at: $TEMP_DIR"
